@@ -1,0 +1,7 @@
+.pio/
+.venv/
+build/
+.DS_Store
+include/device_config.h
+
+NOTES.md

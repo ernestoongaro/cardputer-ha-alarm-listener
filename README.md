@@ -1,4 +1,20 @@
-# Cardputer ADV smoke-alarm listener
+# Cardputer alarm listener for Home Assistant
+
+A smoke alarm is very good at shouting, as long as somebody is home to hear it.
+This firmware turns an [M5Stack Cardputer ADV](https://docs.m5stack.com/en/core/Cardputer-Adv)
+into a small, dedicated pair of ears: it sits near the alarms, recognises the
+sound of the real smoke and carbon monoxide alarms, and tells
+[Home Assistant](https://www.home-assistant.io/) which one went off. Home
+Assistant does the rest: a critical alert to your phone, lights, whatever
+your automations do.
+
+<p align="center">
+  <img src="docs/notification-smoke.png" alt="iPhone critical notification: SMOKE ALARM - the smoke alarm is sounding at home" width="600"><br>
+  <img src="docs/notification-co.png" alt="iPhone critical notification: CARBON MONOXIDE ALARM - the CO alarm is sounding at home, ventilate and leave the house" width="600">
+</p>
+
+The story behind it, with the measurements, is on the blog:
+[Teaching a Cardputer to Hear My Smoke Alarm](https://poolbeg.co/blog/teaching-a-cardputer-to-hear-my-smoke-alarm/).
 
 > **Not a life-safety device.** This is a hobby project that adds a remote
 > notification path for existing certified smoke and CO alarms. It is not a
@@ -6,83 +22,120 @@
 > silence, or reduce reliance on real alarms. Provided as-is, without warranty
 > of any kind; see [LICENSE](LICENSE). Use entirely at your own risk.
 
-Dedicated firmware for an M5Stack Cardputer ADV. It listens continuously for
-the locally measured smoke and CO alarm signatures and exposes Home Assistant
-MQTT `smoke` and `carbon_monoxide` binary sensors. It is installed as the
-primary firmware: power loss, reset, or watchdog recovery boots directly back
-into the listener.
+## How it works
 
-Raw MQTT topics use `cardputer-alarm-<id>/#` (`<id>` is derived from the chip MAC): the retained `smoke` topic is
-`OK` or `ALARM`, `carbon_monoxide` is independently `OK` or `ALARM`, `status`
-is `online` or `offline`, and `telemetry` is JSON.
+The Cardputer's microphone is sampled continuously in 20 ms blocks. Each block
+is scanned for a dominant tone in the alarm range, and a small state machine
+in [`src/alarm_detector.cpp`](src/alarm_detector.cpp) decides whether the
+sequence of tones matches one of two signatures measured from the actual
+alarms with their TEST buttons:
 
-## Safety boundary
+| Alarm | What it sounds like | What the detector wants |
+|---|---|---|
+| Smoke | One loud, harmonically rich tone that refuses to stop | 2.8–3.3 kHz sustained for 3 s, only brief dropouts allowed |
+| CO | Three short beeps, then a pause | Three 0.28–0.85 s bursts at 2.85–3.45 kHz, valid gaps between them, then 0.9 s of quiet |
 
-This is a supplementary notification device, not a certified fire detector or
-life-safety system. Never remove, relocate, silence, or depend less on the real
-smoke alarms. Keep their normal audible coverage and test every alarm plus this
-listener after installation and at least monthly. A closed door, flat battery,
-changed alarm model, microphone obstruction, or unusual acoustic environment
-can prevent audio recognition.
+<p align="center">
+  <img src="docs/smoke-signature.png" alt="Spectrogram and level plot of the smoke alarm: a single sustained tone" width="800"><br>
+  <img src="docs/co-signature.png" alt="Spectrogram and level plot of the CO alarm: three bursts then a pause" width="800">
+</p>
 
-The detector is deliberately tailored to the two installed devices:
+Anything that fails a check (a burst too short, a gap too long, the pitch
+drifting) silently resets the pattern, which is why a single chirp or a
+microwave beep does nothing. Detection runs entirely on the device; Wi-Fi only
+carries the result.
 
-- Smoke: a loud, harmonically rich 2.8-3.3 kHz sustained tone for three
-  seconds, with only brief dropouts allowed.
-- CO: three 0.28-0.85 second bursts around 2.85-3.45 kHz, with valid gaps and
-  a final pause.
+On a match the firmware publishes to MQTT and Home Assistant picks it up through
+[MQTT discovery](https://www.home-assistant.io/integrations/mqtt/#mqtt-discovery)
+as a device called **Cardputer Alarm Listener** with two
+[binary sensors](https://www.home-assistant.io/integrations/binary_sensor/)
+(`smoke` and `carbon_monoxide` device classes). Raw topics live under
+`cardputer-alarm-<id>/#` (`<id>` is derived from the chip MAC): `smoke` and
+`carbon_monoxide` are each retained `OK` or `ALARM`, `status` is `online` or
+`offline`, and `telemetry` is JSON with microphone, signal, and Wi-Fi health.
 
-Those profiles come from physical TEST-button measurements. Alarm models vary,
-so a real test with every smoke and CO alarm is mandatory after any change to
-the listener or its location.
+## What it does when things go wrong
 
-## Resilience behavior
+An appliance that waits for years needs to survive the boring failures:
 
-- Audio detection runs locally and does not stop during Wi-Fi/MQTT outages.
-- MQTT connection work is isolated on the other ESP32 core.
-- The Home Assistant state and MQTT availability messages are retained.
-- An alarm that could not be delivered stays latched in flash across reboots.
-- It clears only after Home Assistant has had the `ON` state for at least one
-  minute and no further alarm cadence has been heard for 90 seconds.
-- A task watchdog automatically reboots a wedged main loop into this firmware.
+- Audio detection keeps running through Wi-Fi and MQTT outages; MQTT work lives
+  on the other ESP32 core so network trouble stays away from the audio loop.
+- State and availability messages are retained, so Home Assistant sees the
+  right thing after a broker restart.
+- An alarm that could not be delivered is latched in flash and published once
+  the connection returns, even across a reboot.
+- An alarm clears only after Home Assistant has shown it for at least one minute
+  and nothing alarm-like has been heard for 90 s.
+- A task watchdog reboots a wedged main loop straight back into the listener.
 - The microphone is restarted if capture stalls or returns digital silence.
-- The internal battery gives short-term continuity if USB power is interrupted,
-  provided the Cardputer power switch remains on and the battery is maintained.
+- The internal battery bridges a short USB power interruption (power switch on,
+  battery maintained).
 
-## First boot and Home Assistant setup
+## Setup
 
-1. Flash the firmware directly over USB (commands below).
-2. The Cardputer creates the Wi-Fi network shown on its display. Its password is
-   also shown on the display.
-3. Join that network, open `http://192.168.4.1`, and enter Wi-Fi plus the IP/name,
-   port, username, and password of Home Assistant's MQTT broker.
-4. With MQTT discovery enabled in Home Assistant, the device
-   **Cardputer Alarm Listener** and its **Smoke alarm listener** entity appear
-   automatically.
-5. Put the Cardputer in its final location and use the TEST button on every
-   smoke and CO alarm. Confirm that Home Assistant marks the matching entity as
-   `Detected`, rather than the other one.
+You need a Cardputer ADV, [PlatformIO](https://platformio.org/) and a Home
+Assistant instance with the
+[MQTT integration](https://www.home-assistant.io/integrations/mqtt/) and a
+broker (the [Mosquitto add-on](https://github.com/home-assistant/addons/tree/master/mosquitto)
+is the usual choice).
 
-Hold the Cardputer's top `G0` button to reopen setup later. Detection continues
-while the setup access point is open.
+1. Build and flash over USB:
 
-For a fixed installation, copy `include/device_config.example.h` to
-`include/device_config.h` and put the Wi-Fi/MQTT credentials there. The real
-file is git-ignored and its values are authoritative at every boot. Without it
-the firmware builds with the example placeholders and relies on the setup portal. Do not put
-`http://` in the MQTT host. The screen sleeps after two minutes; `G0` or any
-keyboard input wakes it, and an alarm wakes it at full brightness.
+   ```sh
+   pio run -e cardputer-adv
+   pio run -e cardputer-adv -t upload --upload-port /dev/cu.usbmodem*
+   ```
 
-## Build, test, and flash
+2. The Cardputer starts a Wi-Fi access point and shows its name and password on
+   the display. Join it, open `http://192.168.4.1`, and enter your Wi-Fi details
+   plus the MQTT broker host (no `http://`), port, username and password.
+3. With MQTT discovery enabled, the **Cardputer Alarm Listener** device and its
+   two entities appear in Home Assistant automatically.
+4. Put the Cardputer in its final spot and press TEST on every smoke and CO
+   alarm. Check that Home Assistant marks the *matching* entity as `Detected`
+   and leaves the other one alone.
 
-PlatformIO manages the vendor and networking libraries:
+Hold the top `G0` button to reopen the setup portal later; detection keeps
+running while it is open. The screen sleeps after two minutes; `G0` or any key
+wakes it, and an alarm wakes it at full brightness.
 
-```sh
-pio run -e cardputer-adv
-pio run -e cardputer-adv -t upload --upload-port /dev/cu.usbmodem*
-```
+For a fixed installation you can skip the portal: copy
+[`include/device_config.example.h`](include/device_config.example.h) to
+`include/device_config.h` and fill in the credentials. That file is git-ignored
+and its values win on every boot. Without it the firmware still builds with the
+placeholders and falls back to the portal.
 
-The signal-processing state machine is host-testable without embedded tools:
+## Where to put it
+
+Mount it with the microphone opening unobstructed, away from speakers, TVs,
+fans, extractor hoods and direct drafts. Keep the USB cable and power adapter
+somewhere smoke or heat would not reach them early. When awake the display
+should read `Mic: OK`, `WiFi: OK` and `HA/MQTT: OK`. Most of the time it should
+look boring, which is the correct look for a device whose job is waiting.
+
+A closed door, a flat battery, a different alarm model, a blocked microphone or
+an unusual room can all stop the recognition, so test every alarm plus this
+listener after installation and at least monthly.
+
+## Tuning it to your own alarms
+
+The two signatures are measured from the alarms in one particular house.
+Alarm models vary, so if yours sound different (most do), measure them:
+
+1. Record each alarm's TEST cycle on your phone from where the Cardputer will
+   live.
+2. Run [`tools/analyze_alarm_audio.py`](tools/analyze_alarm_audio.py) on the
+   recording (needs `ffmpeg` and `numpy`). It converts to 16 kHz mono, the
+   Cardputer's mic rate, and prints one line per detected burst with duration,
+   frequency and tonal purity.
+3. Compare those numbers with the constants at the top of
+   [`src/alarm_detector.cpp`](src/alarm_detector.cpp) and adjust the frequency
+   windows, burst lengths and gaps to match.
+4. Run the host tests, flash, and test with the real alarms again. Every change
+   to the detector or its location earns a fresh round of TEST buttons.
+
+The signal-processing state machine builds and tests on the host without any
+embedded tooling:
 
 ```sh
 xcrun clang++ -std=c++17 -Wall -Wextra -Wpedantic -Isrc \
@@ -91,24 +144,44 @@ xcrun clang++ -std=c++17 -Wall -Wextra -Wpedantic -Isrc \
 /tmp/cardputer_detector_tests
 ```
 
-## Installation notes
+[`tools/plot_alarm_signatures.py`](tools/plot_alarm_signatures.py) renders the
+figures above from your own recordings.
 
-Mount it with the microphone opening unobstructed and away from speakers, TVs,
-fans, extractor hoods, and direct drafts. Keep USB and its power adapter outside
-places where smoke or heat would damage them early. Check that the display says
-`Mic: OK`, `WiFi: OK`, and `HA/MQTT: OK`; Home Assistant also receives microphone,
-signal, sound-level, and detector telemetry as attributes on the smoke entity.
+## Watching it think
 
-## Serial console
-
-The firmware prints `BOOT`, `STATUS` (every ~2 s), `FRAME` (while audio is above
-the level gate), and `DETECT tone=… bursts=… smoke_event=… co_event=…` lines at
-115200 baud. Read them with `pio device monitor`, or, if the USB port is exposed
-over the network by `ser2net`, with:
+The firmware prints `BOOT`, `STATUS` (every ~2 s), `FRAME` (while audio is
+above the level gate) and `DETECT tone=… bursts=… smoke_event=… co_event=…`
+lines at 115200 baud. Read them with `pio device monitor`, or, if the USB port
+is exposed over the network by [`ser2net`](https://github.com/cminyard/ser2net):
 
 ```sh
 python3 tools/serial_capture.py <ser2net-host> 4000 serial.log
 ```
 
-The `DETECT` lines show exactly which burst, gap, or frequency check accepted or
-rejected an alarm cadence, which is the fastest way to diagnose a missed test.
+The `DETECT` lines show exactly which burst, gap or frequency check accepted or
+rejected a cadence, which is the fastest way to work out why a test was missed.
+This is what a CO TEST looks like: a stray opening chirp rejected as too short,
+then three bursts at 3150 Hz accepted, then the event:
+
+```
+DETECT tone=1 bursts=0 rms=37.7 peak=3150Hz quality=0.124 smoke_event=0 co_event=0
+DETECT tone=0 bursts=0 rms=21.7 peak=3150Hz quality=0.066 smoke_event=0 co_event=0
+DETECT tone=1 bursts=0 rms=39.4 peak=3150Hz quality=0.132 smoke_event=0 co_event=0
+DETECT tone=0 bursts=1 rms=10.2 peak=3150Hz quality=0.125 smoke_event=0 co_event=0
+DETECT tone=1 bursts=1 rms=39.9 peak=3150Hz quality=0.108 smoke_event=0 co_event=0
+DETECT tone=0 bursts=2 rms=7.7  peak=3150Hz quality=0.077 smoke_event=0 co_event=0
+DETECT tone=1 bursts=2 rms=42.3 peak=3150Hz quality=0.111 smoke_event=0 co_event=0
+DETECT tone=0 bursts=3 rms=9.5  peak=3150Hz quality=0.084 smoke_event=0 co_event=0
+DETECT tone=0 bursts=0 rms=7.4  peak=4200Hz quality=0.004 smoke_event=0 co_event=1
+```
+
+## Built with
+
+- [M5Cardputer](https://github.com/m5stack/M5Cardputer) library for the display, keyboard and microphone
+- [WiFiManager](https://github.com/tzapu/WiFiManager) for the setup portal
+- [PubSubClient](https://github.com/knolleary/pubsubclient) for MQTT
+- [PlatformIO](https://platformio.org/) with the Arduino ESP32 core
+
+## License
+
+[MIT](LICENSE). Not a life-safety device; see the notice at the top.

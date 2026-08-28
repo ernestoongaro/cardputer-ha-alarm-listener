@@ -10,7 +10,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-BG, INK, MUTED, AMBER, AMBER_DIM, CYAN, RED, BAND = ("#0b0f1a", "#f2f4f8", "#8b93a7", "#f5a623", "#5a4a1e", "#3fd0d4", "#ff3b3b", "#0f2a33")
+BG, INK, MUTED, AMBER, AMBER_DIM, CYAN, RED, BAND = ("#ffffff", "#1c1c1c", "#6b6b6b", "#d98c00", "#f7dfae", "#0f8b8d", "#d0312d", "#d8efef")
 WIN = 0.02
 
 def load(path):
@@ -34,8 +34,8 @@ def figure(path, t0, span, title, subtitle, badge, band, annotate, out):
     tt = np.arange(m) / 1000; hi, lo = blk.max(1), blk.min(1); amp = np.abs(seg).max()
 
     fig = plt.figure(figsize=(20.8, 10.4), dpi=100, facecolor=BG)
-    ax = fig.add_axes([0.085, 0.36, 0.885, 0.46], facecolor=BG)
-    fx = fig.add_axes([0.085, 0.17, 0.885, 0.13], facecolor=BG, sharex=ax)
+    ax = fig.add_axes([0.085, 0.38, 0.885, 0.46], facecolor=BG)
+    fx = fig.add_axes([0.085, 0.12, 0.885, 0.13], facecolor=BG, sharex=ax)
     for a in (ax, fx):
         for s in a.spines.values(): s.set_visible(False)
         a.tick_params(colors=MUTED, labelsize=15, length=0)
@@ -51,10 +51,7 @@ def figure(path, t0, span, title, subtitle, badge, band, annotate, out):
     fx.set_ylim(band[0] - 350, band[1] + 350); fx.set_yticks(band); fx.set_yticklabels([f"{b/1000:.2f} kHz" for b in band], color=CYAN)
     fx.set_ylabel("Peak\nfrequency", color=MUTED, fontsize=16); fx.set_xlabel("Time (s)", color=MUTED, fontsize=17)
     fx.set_xticks(range(int(span) + 1))
-    fig.text(0.085, 0.93, title, color=INK, fontsize=32); fig.text(0.085, 0.88, subtitle, color=MUTED, fontsize=18)
-    fig.text(0.97, 0.93, badge, color=RED, fontsize=32, ha="right")
-    fig.text(0.5, 0.045, f"Real microphone recording of the installed alarm ({path.split('/')[-1]}), 16 kHz mono; 20 ms analysis frames, the same block size the Cardputer uses",
-             color=MUTED, fontsize=15, ha="center")
+    fig.text(0.085, 0.9, title, color=INK, fontsize=32)
     annotate(ax, fx, fr, gate, amp, span)
     fig.savefig(out, facecolor=BG); print("wrote", out)
 
@@ -82,9 +79,8 @@ def vline(ax, fx, t, label):
 def ann_smoke(ax, fx, fr, gate, amp, span):
     b = merge(bursts(fr, gate)); t_on = b[0][0]; t_ok = t_on + 3.0; y = amp * 1.12
     ax.annotate("", (t_ok, y), (t_on, y), arrowprops=dict(arrowstyle="<->", color=INK, lw=1.4))
-    ax.text((t_on + t_ok) / 2, y + amp * 0.08, "150 consecutive 20 ms frames  =  3.00 s", color=INK, fontsize=19, ha="center")
+    ax.text((t_on + t_ok) / 2, y + amp * 0.08, "3 s without a break", color=INK, fontsize=19, ha="center")
     vline(ax, fx, t_ok, "confirmed")
-    loud = fr[fr[:, 1] > gate]; fx.text(0.02, fx.get_ylim()[1] - 60, f"measured ≈ {np.percentile(loud[:,2],5)/1000:.2f}–{np.percentile(loud[:,2],95)/1000:.2f} kHz, {b[0][1]-b[0][0]:.1f} s unbroken (recording cut at 5 s)", color=MUTED, fontsize=16, ha="left", va="top")
 
 def ann_co(ax, fx, fr, gate, amp, span):
     b = merge(bursts(fr, gate))[:3]; y = amp * 1.12
@@ -92,17 +88,16 @@ def ann_co(ax, fx, fr, gate, amp, span):
     ax.text((b[0][0] + b[2][1]) / 2, y + amp * 0.08, "3 bursts counted", color=INK, fontsize=19, ha="center")
     for i, (a, e) in enumerate(b):
         seg = fr[(fr[:, 0] >= a) & (fr[:, 0] < e)]
-        ax.text((a + e) / 2, -amp * 1.05, f"burst {i+1}\n{e-a:.2f} s · rms {seg[:,1].mean():.0f}", color=INK, fontsize=16, ha="center", va="top")
+        ax.text((a + e) / 2, -amp * 1.05, f"{e-a:.2f} s", color=INK, fontsize=16, ha="center", va="top")
         if i < 2:
             g0, g1 = e, b[i + 1][0]; yg = amp * 0.75
             ax.annotate("", (g1, yg), (g0, yg), arrowprops=dict(arrowstyle="<->", color=CYAN, lw=1.4))
             ax.text((g0 + g1) / 2, yg + amp * 0.06, f"gap {g1-g0:.2f} s", color=CYAN, fontsize=16, ha="center")
     t_ok = b[2][1] + 0.9; yg = amp * 0.75
     ax.annotate("", (t_ok, yg), (b[2][1], yg), arrowprops=dict(arrowstyle="<->", color=RED, lw=1.4))
-    ax.text((b[2][1] + t_ok) / 2, yg + amp * 0.06, "final pause ≥ 0.90 s", color=RED, fontsize=16, ha="center")
+    ax.text((b[2][1] + t_ok) / 2, yg + amp * 0.06, "pause ≥ 0.9 s", color=RED, fontsize=16, ha="center")
     vline(ax, fx, t_ok, "confirmed")
-    loud = fr[fr[:, 1] > gate]; fx.text(span, fx.get_ylim()[1] - 60, f"measured ≈ {np.median(loud[:,2])/1000:.2f} kHz in every burst", color=MUTED, fontsize=16, ha="right", va="top")
 
 smoke, co, out = sys.argv[1:4]
-figure(smoke, 3.0, 5.0, "Smoke signature — one sustained tone", "A loud 2.80–3.30 kHz tone that simply refuses to stop", "SMOKE  ALARM", (2800, 3300), ann_smoke, f"{out}/smoke-signature.png")
-figure(co, 4.0, 5.0, "Carbon monoxide signature — three bursts, then a pause", "Three short 2.85–3.45 kHz bursts, valid gaps, and a deliberate silence", "CO  ALARM", (2850, 3450), ann_co, f"{out}/co-signature.png")
+figure(smoke, 3.0, 5.0, "Smoke alarm: one sustained tone", "", "SMOKE  ALARM", (2800, 3300), ann_smoke, f"{out}/smoke-signature.png")
+figure(co, 4.0, 5.0, "CO alarm: three bursts, then a pause", "", "CO  ALARM", (2850, 3450), ann_co, f"{out}/co-signature.png")

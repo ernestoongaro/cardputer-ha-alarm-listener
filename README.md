@@ -14,7 +14,7 @@ your automations do.
 </p>
 
 The story behind it, with the measurements, is on the blog:
-[Teaching a Cardputer to Hear My Smoke Alarm](https://poolbeg.co/blog/teaching-a-cardputer-to-hear-my-smoke-alarm/).
+[Teaching a Cardputer to Hear My Smoke Alarm](https://poolbeg.co/teaching-a-cardputer-to-hear-my-smoke-alarm/).
 
 > **Not a life-safety device.** This is a hobby project that adds a remote
 > notification path for existing certified smoke and CO alarms. It is not a

@@ -1,5 +1,11 @@
 # Cardputer ADV smoke-alarm listener
 
+> **Not a life-safety device.** This is a hobby project that adds a remote
+> notification path for existing certified smoke and CO alarms. It is not a
+> certified detector, may miss or misidentify alarms, and must never replace,
+> silence, or reduce reliance on real alarms. Provided as-is, without warranty
+> of any kind; see [LICENSE](LICENSE). Use entirely at your own risk.
+
 Dedicated firmware for an M5Stack Cardputer ADV. It listens continuously for
 the locally measured smoke and CO alarm signatures and exposes Home Assistant
 MQTT `smoke` and `carbon_monoxide` binary sensors. It is installed as the

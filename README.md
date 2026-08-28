@@ -28,12 +28,27 @@ The Cardputer's microphone is sampled continuously in 20 ms blocks. Each block
 is scanned for a dominant tone in the alarm range, and a small state machine
 in [`src/alarm_detector.cpp`](src/alarm_detector.cpp) decides whether the
 sequence of tones matches one of two signatures measured from the actual
-alarms with their TEST buttons:
+alarms with their TEST buttons.
 
-| Alarm | What it sounds like | What the detector wants |
+### Built for these two alarms
+
+| Alarm | Model | Sound |
 |---|---|---|
-| Smoke | One loud, harmonically rich tone that refuses to stop | 2.8–3.3 kHz sustained for 3 s, only brief dropouts allowed |
-| CO | Three short beeps, then a pause | Three 0.28–0.85 s bursts at 2.85–3.45 kHz, valid gaps between them, then 0.9 s of quiet |
+| Smoke | [Aico Ei141-series](https://www.aico.co.uk/product/ei141rc-ionisation-smoke-alarm/) mains ionisation smoke alarm (Ei141 / Ei141RC) | One loud, harmonically rich tone that refuses to stop |
+| CO | [Aico Ei208](https://www.aico.co.uk/product/ei208-battery-co-alarm/) battery carbon monoxide alarm | Three short beeps, then a pause (Aico's own spec: "3 rapid pulses followed by a ½ second pause") |
+
+Both are common in Irish and UK homes, and the detector's constants are tuned to
+these units as measured from where the Cardputer lives. A different model, a
+different room, or even the same model on a different wall can sound different
+enough to be missed, so treat the profiles below as a starting point and
+[measure your own](#tuning-it-to-your-own-alarms).
+
+What the detector wants from each:
+
+| Alarm | Signature |
+|---|---|
+| Smoke (Ei141) | 2.8–3.3 kHz sustained for 3 s, only brief dropouts allowed |
+| CO (Ei208) | Three 0.28–0.85 s bursts at 2.85–3.45 kHz, valid gaps between them, then 0.9 s of quiet |
 
 <p align="center">
   <img src="docs/smoke-signature.png" alt="Spectrogram and level plot of the smoke alarm: a single sustained tone" width="800"><br>
@@ -119,8 +134,9 @@ listener after installation and at least monthly.
 
 ## Tuning it to your own alarms
 
-The two signatures are measured from the alarms in one particular house.
-Alarm models vary, so if yours sound different (most do), measure them:
+The two signatures are measured from an Aico Ei141 and an Ei208 in one
+particular house. If your alarms are anything else (and even if they are the
+same models), measure them from the Cardputer's final location:
 
 1. Record each alarm's TEST cycle on your phone from where the Cardputer will
    live.

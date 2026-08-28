@@ -197,6 +197,7 @@ DETECT tone=0 bursts=0 rms=7.4  peak=4200Hz quality=0.004 smoke_event=0 co_event
 - [WiFiManager](https://github.com/tzapu/WiFiManager) for the setup portal
 - [PubSubClient](https://github.com/knolleary/pubsubclient) for MQTT
 - [PlatformIO](https://platformio.org/) with the Arduino ESP32 core
+- [Claude Code](https://claude.com/claude-code) wrote most of it; a human measured, tested and argued with it
 
 ## License
 
